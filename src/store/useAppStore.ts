@@ -11,6 +11,24 @@ export interface SelectedColumn {
   column: string;
 }
 
+/** Right-click menu on a node card, or on one of its columns when `column` is set. */
+export interface ContextMenuState {
+  x: number;
+  y: number;
+  nodeId: string;
+  column?: string;
+}
+
+export interface DisplaySettings {
+  /** Max height of a table node in px; 0 = grow to fit all columns. */
+  nodeMaxHeight: number;
+  /** Height of one column row in px. */
+  rowHeight: number;
+  showMinimap: boolean;
+}
+
+export const DEFAULT_DISPLAY: DisplaySettings = { nodeMaxHeight: 0, rowHeight: 24, showMinimap: true };
+
 interface AppState {
   manifest: ColibriManifest | null;
   index: GraphIndex | null;
@@ -30,6 +48,10 @@ interface AppState {
   detailNode: string | null;
   selectedColumn: SelectedColumn | null;
   lineage: ColumnLineage | null;
+  /** Hide columns that are not part of the selected column's lineage (on nodes in that lineage). */
+  relatedOnly: boolean;
+  contextMenu: ContextMenuState | null;
+  display: DisplaySettings;
 
   graphLayerFilter: string[];
   graphTagFilter: string[];
@@ -64,6 +86,12 @@ interface AppState {
   openDetails: (id: string | null) => void;
   selectColumn: (column: SelectedColumn | null) => void;
   clearSelection: () => void;
+  /** Select `column` (if given and not already selected) and show only its related columns, or toggle off. */
+  setRelatedOnly: (on: boolean, column?: SelectedColumn) => void;
+  openContextMenu: (menu: ContextMenuState) => void;
+  closeContextMenu: () => void;
+  /** Update display settings; pass `relayout: false` for live preview while dragging a slider. */
+  setDisplay: (settings: Partial<DisplaySettings>, relayout?: boolean) => void;
 
   setGraphLayerFilter: (layers: string[]) => void;
   setGraphTagFilter: (tags: string[]) => void;
@@ -79,6 +107,20 @@ interface AppState {
 }
 
 const THEME_KEY = 'colibri-theme';
+const DISPLAY_KEY = 'colibri-display';
+
+function initialDisplay(): DisplaySettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? '{}') as Partial<DisplaySettings>;
+    return {
+      nodeMaxHeight: typeof saved.nodeMaxHeight === 'number' ? saved.nodeMaxHeight : DEFAULT_DISPLAY.nodeMaxHeight,
+      rowHeight: typeof saved.rowHeight === 'number' ? saved.rowHeight : DEFAULT_DISPLAY.rowHeight,
+      showMinimap: typeof saved.showMinimap === 'boolean' ? saved.showMinimap : DEFAULT_DISPLAY.showMinimap,
+    };
+  } catch {
+    return DEFAULT_DISPLAY;
+  }
+}
 
 function initialTheme(): Theme {
   const saved = localStorage.getItem(THEME_KEY);
@@ -99,6 +141,8 @@ const emptyCanvas = {
   detailNode: null,
   selectedColumn: null,
   lineage: null,
+  relatedOnly: false,
+  contextMenu: null,
 };
 
 const theme = initialTheme();
@@ -134,6 +178,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     graphTagFilter: [],
     expandDepth: 1,
     badgeMode: '1',
+    display: initialDisplay(),
     theme,
     leftOpen: true,
     rightOpen: true,
@@ -157,6 +202,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         detailNode: id,
         selectedColumn: null,
         lineage: null,
+        relatedOnly: false,
         layoutRequest: s.layoutRequest + 1,
       }));
     },
@@ -199,19 +245,53 @@ export const useAppStore = create<AppState>()((set, get) => {
     setSelectedNodes: (ids) => set({ selectedNodes: ids }),
     openDetails: (id) => set((s) => ({ detailNode: id, rightOpen: id ? true : s.rightOpen })),
     selectColumn: (column) => {
-      const { index } = get();
+      const { index, relatedOnly } = get();
+      // Turning off the lineage also turns off "related only"; re-layout since node heights change back.
+      const clear = () => set((s) => ({ selectedColumn: null, lineage: null, relatedOnly: false, layoutRequest: s.layoutRequest + (relatedOnly ? 1 : 0) }));
       if (!column || !index) {
-        set({ selectedColumn: null, lineage: null });
+        clear();
         return;
       }
       const current = get().selectedColumn;
       if (current && current.node === column.node && current.column === column.column) {
-        set({ selectedColumn: null, lineage: null });
+        clear();
         return;
       }
-      set({ selectedColumn: column, lineage: columnLineage(index, column.node, column.column) });
+      set((s) => ({
+        selectedColumn: column,
+        lineage: columnLineage(index, column.node, column.column),
+        layoutRequest: s.layoutRequest + (relatedOnly ? 1 : 0),
+      }));
     },
-    clearSelection: () => set({ selectedNodes: [], selectedColumn: null, lineage: null }),
+    clearSelection: () =>
+      set((s) => ({
+        selectedNodes: [],
+        selectedColumn: null,
+        lineage: null,
+        relatedOnly: false,
+        contextMenu: null,
+        layoutRequest: s.layoutRequest + (s.relatedOnly ? 1 : 0),
+      })),
+    setRelatedOnly: (on, column) => {
+      const { index, selectedColumn } = get();
+      const target = column ?? selectedColumn;
+      if (!index || !target) return;
+      const sameColumn = selectedColumn?.node === target.node && selectedColumn.column === target.column;
+      set((s) => ({
+        selectedColumn: target,
+        lineage: sameColumn && s.lineage ? s.lineage : columnLineage(index, target.node, target.column),
+        relatedOnly: on,
+        layoutRequest: s.layoutRequest + 1,
+      }));
+    },
+    openContextMenu: (contextMenu) => set({ contextMenu }),
+    closeContextMenu: () => set({ contextMenu: null }),
+    setDisplay: (settings, relayout = true) =>
+      set((s) => {
+        const display = { ...s.display, ...settings };
+        localStorage.setItem(DISPLAY_KEY, JSON.stringify(display));
+        return { display, layoutRequest: s.layoutRequest + (relayout ? 1 : 0) };
+      }),
 
     setGraphLayerFilter: (graphLayerFilter) => set({ graphLayerFilter }),
     setGraphTagFilter: (graphTagFilter) => set({ graphTagFilter }),

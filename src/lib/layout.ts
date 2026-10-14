@@ -1,12 +1,33 @@
 export const NODE_WIDTH = 260;
-const HEADER_HEIGHT = 64;
-const COLUMN_ROW_HEIGHT = 26;
-const COLUMNS_PADDING = 24;
-const FOOTER_HEIGHT = 44;
+/** Vertical gap between column rows (Tailwind `space-y-1`). */
+export const ROW_GAP = 4;
+/** Padding above the first row inside the scroll area (`py-0.5`). */
+export const LIST_PADDING = 2;
+/** Card border + padding + header. */
+const CARD_HEAD = 4 + 24 + 36;
+/** Divider + spacing above the column list. */
+const LIST_CHROME = 12 + 1 + 8;
+/** Footer with the +parents / +children buttons. */
+const FOOTER = 12 + 1 + 24;
+/** Smallest column area kept when the max node height is very small. */
+export const MIN_LIST_HEIGHT = 40;
 
-export function estimateNodeHeight(columnCount: number, folded: boolean): number {
-  if (folded || columnCount === 0) return HEADER_HEIGHT + FOOTER_HEIGHT;
-  return HEADER_HEIGHT + COLUMNS_PADDING + columnCount * COLUMN_ROW_HEIGHT + FOOTER_HEIGHT;
+/** Height of a list of `count` rows, without any max-height cap. */
+export function listHeight(count: number, rowHeight: number): number {
+  return count === 0 ? 0 : LIST_PADDING * 2 + count * rowHeight + (count - 1) * ROW_GAP;
+}
+
+/** Max height of the scrollable column area for a given max node height (0 = no cap). */
+export function listMaxHeight(nodeMaxHeight: number): number | null {
+  if (nodeMaxHeight <= 0) return null;
+  return Math.max(MIN_LIST_HEIGHT, nodeMaxHeight - CARD_HEAD - LIST_CHROME - FOOTER);
+}
+
+export function estimateNodeHeight(columnCount: number, folded: boolean, rowHeight: number, nodeMaxHeight: number): number {
+  if (folded || columnCount === 0) return CARD_HEAD + FOOTER;
+  const full = listHeight(columnCount, rowHeight);
+  const cap = listMaxHeight(nodeMaxHeight);
+  return CARD_HEAD + LIST_CHROME + (cap === null ? full : Math.min(full, cap)) + FOOTER;
 }
 
 export interface LayoutInput {

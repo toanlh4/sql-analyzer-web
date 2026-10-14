@@ -3,6 +3,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   EyeOff,
+  ListFilter,
   Layers,
   LayoutGrid,
   Maximize,
@@ -15,6 +16,7 @@ import { useAppStore, type BadgeMode } from '../../store/useAppStore';
 import { allLayers, allTags } from '../../lib/filters';
 import { MultiSelectFilter } from '../common/MultiSelectFilter';
 import { Popover } from '../common/Popover';
+import { DisplaySettingsPanel } from './DisplaySettingsPanel';
 
 const BADGE_OPTIONS: { value: BadgeMode; label: string }[] = [
   { value: 'off', label: 'Off' },
@@ -114,6 +116,8 @@ export function GraphToolbar() {
   const clearCanvas = useAppStore((s) => s.clearCanvas);
   const lineage = useAppStore((s) => s.lineage);
   const addNodes = useAppStore((s) => s.addNodes);
+  const relatedOnly = useAppStore((s) => s.relatedOnly);
+  const setRelatedOnly = useAppStore((s) => s.setRelatedOnly);
 
   const loadedNodes = useMemo(
     () => canvasNodes.map((id) => manifest?.nodes[id]).filter((n) => n !== undefined),
@@ -169,10 +173,20 @@ export function GraphToolbar() {
         emptyText="No tags found"
       />
       <HiddenModels />
+      {lineage && (
+        <button
+          type="button"
+          title={relatedOnly ? 'Show all columns (Shift+F)' : 'Show only related columns (Shift+F)'}
+          onClick={() => setRelatedOnly(!relatedOnly)}
+          className={`toolbar-btn ${relatedOnly ? 'toolbar-btn-active' : ''}`}
+        >
+          <ListFilter className="h-4 w-4" />
+        </button>
+      )}
       {lineageMissing > 0 && lineage && (
         <button
           type="button"
-          title="Load every model in the selected column's lineage"
+          title="Load every model in the selected column's lineage (Shift+L)"
           onClick={() => addNodes([...lineage.nodes])}
           className="toolbar-btn toolbar-btn-active"
         >
@@ -183,6 +197,7 @@ export function GraphToolbar() {
       <div className="toolbar-sep" />
       <BadgeToggle />
       <div className="toolbar-sep" />
+      <DisplaySettingsPanel />
       <button type="button" title="Clear canvas" onClick={clearCanvas} className="toolbar-btn">
         <Trash2 className="h-4 w-4" />
       </button>

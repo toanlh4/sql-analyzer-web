@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { visibleColumns } from '../../lib/visibleColumns';
 import {
   Background,
   Controls,
+  MiniMap,
   MarkerType,
   Panel,
   ReactFlow,
@@ -13,12 +15,13 @@ import {
 import { Search } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { matchesFilters } from '../../lib/filters';
+import { nodeStyle } from '../../lib/nodeStyle';
 import { columnKey } from '../../lib/graphIndex';
 import { estimateNodeHeight, layoutGraph } from '../../lib/layout';
 import { MODEL_SOURCE_HANDLE, MODEL_TARGET_HANDLE, ModelNode, type ModelFlowNode } from './ModelNode';
 import { columnHandleId } from './ColumnRow';
 import { GraphToolbar } from './GraphToolbar';
-import { NodeContextMenu, type ContextMenuState } from './NodeContextMenu';
+import { NodeContextMenu } from './NodeContextMenu';
 
 const nodeTypes = { modelNode: ModelNode };
 
@@ -40,10 +43,12 @@ export function LineageCanvas() {
   const layerFilter = useAppStore((s) => s.graphLayerFilter);
   const tagFilter = useAppStore((s) => s.graphTagFilter);
   const theme = useAppStore((s) => s.theme);
-  const { setSelectedNodes, openDetails, setPositions, movePosition, clearSelection, setSearchOpen } = useAppStore.getState();
+  const detailNode = useAppStore((s) => s.detailNode);
+  const showMinimap = useAppStore((s) => s.display.showMinimap);
+  const { setSelectedNodes, openDetails, setPositions, movePosition, clearSelection, setSearchOpen, openContextMenu, closeContextMenu } =
+    useAppStore.getState();
 
   const { fitView } = useReactFlow();
-  const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [nodes, setNodes] = useState<ModelFlowNode[]>([]);
 
   const visibleIds = useMemo(() => {
@@ -77,13 +82,18 @@ export function LineageCanvas() {
   const latestLayout = useRef(0);
   useEffect(() => {
     if (!manifest || !index || layoutRequest === 0) return;
-    const { canvasNodes: ids, hidden: hiddenNow, folded: foldedNow } = useAppStore.getState();
-    const layoutIds = ids.filter((id) => !hiddenNow.has(id));
+    const { canvasNodes: ids, hidden: hiddenNow, folded: foldedNow, lineage: lineageNow, relatedOnly, display } = useAppStore.getState();
+    const layoutIds = ids.filter((id) => !hiddenNow.has(id) && manifest.nodes[id]);
     if (layoutIds.length === 0) return;
     const run = ++latestLayout.current;
     const inputs = layoutIds.map((id) => ({
       id,
-      height: estimateNodeHeight(Object.keys(manifest.nodes[id]?.columns ?? {}).length, foldedNow.has(id)),
+      height: estimateNodeHeight(
+        visibleColumns(manifest.nodes[id], lineageNow, relatedOnly).length,
+        foldedNow.has(id),
+        display.rowHeight,
+        display.nodeMaxHeight,
+      ),
     }));
     const edges = layoutIds.flatMap((target) => [...(index.modelParents.get(target) ?? [])].map((source) => ({ source, target })));
     void layoutGraph(inputs, edges).then((result) => {
@@ -192,10 +202,10 @@ export function LineageCanvas() {
         onNodeDragStop={(_, __, dragged) => dragged.forEach((n) => movePosition(n.id, n.position))}
         onNodeContextMenu={(event, node) => {
           event.preventDefault();
-          setMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+          openContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
         }}
         onPaneClick={() => {
-          setMenu(null);
+          closeContextMenu();
           clearSelection();
         }}
         colorMode={theme}
@@ -208,6 +218,24 @@ export function LineageCanvas() {
       >
         <Background gap={20} size={1} />
         <Controls showInteractive={false} />
+        {showMinimap && (
+          <MiniMap<ModelFlowNode>
+            pannable
+            zoomable
+            ariaLabel="Lineage minimap"
+            nodeBorderRadius={4}
+            nodeStrokeWidth={6}
+            nodeColor={(n) => {
+              const node = manifest.nodes[n.id];
+              const color = node ? nodeStyle(node).minimap : '#9ca3af';
+              // While a column is traced, fade nodes outside its lineage like the canvas does.
+              return lineage && !lineage.nodes.has(n.id) ? `${color}40` : color;
+            }}
+            nodeStrokeColor={(n) => (n.selected || n.id === detailNode ? '#1d4ed8' : 'transparent')}
+            maskColor={theme === 'dark' ? 'rgba(17, 24, 39, 0.6)' : 'rgba(243, 244, 246, 0.6)'}
+            className="overflow-hidden rounded-lg border border-gray-200 shadow-sm dark:border-gray-700"
+          />
+        )}
         <Panel position="top-left">
           <GraphToolbar />
         </Panel>
@@ -224,7 +252,7 @@ export function LineageCanvas() {
           </Panel>
         )}
       </ReactFlow>
-      {menu && <NodeContextMenu menu={menu} onClose={() => setMenu(null)} />}
+      <NodeContextMenu />
     </div>
   );
 }

@@ -1,10 +1,12 @@
-import { memo, useCallback, useMemo } from 'react';
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Handle, Position, useUpdateNodeInternals, type Node, type NodeProps } from '@xyflow/react';
 import { ChevronDown, Plus } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { nodeStyle } from '../../lib/nodeStyle';
 import { columnKey } from '../../lib/graphIndex';
-import { ColumnRow, hiddenHandleStyle } from './ColumnRow';
+import { LIST_PADDING, ROW_GAP, listHeight, listMaxHeight } from '../../lib/layout';
+import { visibleColumns } from '../../lib/visibleColumns';
+import { ColumnRow, columnHandleId, hiddenHandleStyle } from './ColumnRow';
 
 export type ModelFlowNode = Node<{ nodeId: string }, 'modelNode'>;
 
@@ -44,6 +46,10 @@ function ModelNodeImpl({ data, selected }: NodeProps<ModelFlowNode>) {
   const expand = useAppStore((s) => s.expand);
   const toggleFold = useAppStore((s) => s.toggleFold);
   const selectColumn = useAppStore((s) => s.selectColumn);
+  const openContextMenu = useAppStore((s) => s.openContextMenu);
+  const relatedOnly = useAppStore((s) => s.relatedOnly);
+  const { rowHeight, nodeMaxHeight } = useAppStore((s) => s.display);
+  const updateNodeInternals = useUpdateNodeInternals();
 
   const { missingParents, missingChildren } = useMemo(() => {
     const onCanvas = new Set(canvasNodes.filter((n) => !hidden.has(n)));
@@ -51,19 +57,63 @@ function ModelNodeImpl({ data, selected }: NodeProps<ModelFlowNode>) {
     return { missingParents: count(index?.modelParents.get(id)), missingChildren: count(index?.modelChildren.get(id)) };
   }, [canvasNodes, hidden, index, id]);
 
+  const columns = useMemo(() => (node ? visibleColumns(node, lineage, relatedOnly) : []), [node, lineage, relatedOnly]);
+  const fullHeight = listHeight(columns.length, rowHeight);
+  const cap = listMaxHeight(nodeMaxHeight);
+  const viewportHeight = cap === null ? fullHeight : Math.min(fullHeight, cap);
+  const scrollable = cap !== null && fullHeight > cap;
+
+  // Track the list's scroll offset so column handles can follow (and clamp to the list edges).
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const frame = useRef(0);
+  const onScroll = useCallback(() => {
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => setScrollTop(scrollRef.current?.scrollTop ?? 0));
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+
+  // Content height changes can clamp scrollTop without a scroll event.
+  useEffect(() => {
+    setScrollTop(scrollRef.current?.scrollTop ?? 0);
+  }, [columns, rowHeight, cap, folded]);
+
+  // Handles moved: tell React Flow to re-measure them so edges follow.
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, scrollTop, columns, rowHeight, cap, folded, updateNodeInternals]);
+
+  // Scroll the selected (or first related) column into view when the lineage changes.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !lineage || !scrollable) return;
+    let idx = selectedColumn?.node === id ? columns.findIndex((c) => c.columnName === selectedColumn.column) : -1;
+    if (idx < 0) idx = columns.findIndex((c) => lineage.columns.has(columnKey(id, c.columnName)));
+    if (idx < 0) return;
+    const top = LIST_PADDING + idx * (rowHeight + ROW_GAP);
+    if (top < el.scrollTop || top + rowHeight > el.scrollTop + el.clientHeight) {
+      el.scrollTop = Math.max(0, top - el.clientHeight / 3);
+    }
+    // Only when the lineage itself changes, not on every re-render.
+  }, [lineage]);
+
   const onColumnClick = useCallback((column: string) => selectColumn({ node: id, column }), [selectColumn, id]);
+  const onColumnContextMenu = useCallback(
+    (column: string, x: number, y: number) => openContextMenu({ x, y, nodeId: id, column }),
+    [openContextMenu, id],
+  );
 
   if (!node) return null;
   const style = nodeStyle(node);
   const Icon = style.icon;
-  const columns = Object.values(node.columns);
+  const totalColumns = Object.keys(node.columns).length;
   const inLineage = lineage?.nodes.has(id) ?? false;
   const showBadges = badgeMode === 'all' || (badgeMode === '1' && (isDetail || selected || inLineage));
   const nodeTooltip = [
     node.fullName,
     `Type: ${node.nodeType}${node.materialized && node.materialized !== 'unknown' ? ` (${node.materialized})` : ''}`,
     node.modelType !== 'unknown' ? `Layer: ${node.modelType}` : null,
-    `${columns.length} columns`,
+    `${totalColumns} columns`,
     node.description ? `\n${node.description}` : null,
   ]
     .filter(Boolean)
@@ -86,12 +136,16 @@ function ModelNodeImpl({ data, selected }: NodeProps<ModelFlowNode>) {
               {node.name}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              {node.nodeType === 'exposure' ? node.exposure_metadata?.type ?? 'exposure' : `${columns.length} columns`}
+              {node.nodeType === 'exposure'
+                ? node.exposure_metadata?.type ?? 'exposure'
+                : columns.length < totalColumns
+                  ? `${columns.length} of ${totalColumns} columns`
+                  : `${totalColumns} columns`}
               {node.materialized === 'ephemeral' && ' · ephemeral'}
             </div>
           </div>
         </div>
-        {columns.length > 0 && (
+        {totalColumns > 0 && (
           <button
             type="button"
             title={folded ? 'Unfold (Tab)' : 'Fold (Tab)'}
@@ -108,23 +162,54 @@ function ModelNodeImpl({ data, selected }: NodeProps<ModelFlowNode>) {
 
       {!folded && columns.length > 0 && (
         <div className="mt-3 border-t border-gray-200 pt-2 dark:border-gray-700">
-          <div className="nodrag -mx-1 space-y-1 px-1 py-0.5">
-            {columns.map((column) => {
-              const key = columnKey(id, column.columnName);
-              const isSelected = selectedColumn?.node === id && selectedColumn.column === column.columnName;
-              const isRelated = !isSelected && (lineage?.columns.has(key) ?? false);
-              return (
-                <ColumnRow
-                  key={column.columnName}
-                  column={column}
-                  state={isSelected ? 'selected' : isRelated ? 'related' : 'none'}
-                  dimmed={!!lineage && inLineage && !isSelected && !isRelated}
-                  showBadge={showBadges}
-                  onClick={onColumnClick}
-                />
-              );
-            })}
+          <div className="relative">
+            <div
+              ref={scrollRef}
+              onScroll={onScroll}
+              style={{ maxHeight: cap ?? undefined }}
+              className={`nodrag -mx-1 overflow-y-auto px-1 ${scrollable ? 'nowheel' : ''}`}
+            >
+              <div className="flex flex-col" style={{ gap: ROW_GAP, paddingBlock: LIST_PADDING }}>
+                {columns.map((column) => {
+                  const key = columnKey(id, column.columnName);
+                  const isSelected = selectedColumn?.node === id && selectedColumn.column === column.columnName;
+                  const isRelated = !isSelected && (lineage?.columns.has(key) ?? false);
+                  return (
+                    <ColumnRow
+                      key={column.columnName}
+                      column={column}
+                      state={isSelected ? 'selected' : isRelated ? 'related' : 'none'}
+                      dimmed={!!lineage && inLineage && !isSelected && !isRelated}
+                      showBadge={showBadges}
+                      height={rowHeight}
+                      onClick={onColumnClick}
+                      onContextMenu={onColumnContextMenu}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+            {/* Column handles live outside the scroll area, clamped to its top/bottom edge when scrolled out of view. */}
+            <div className="pointer-events-none absolute inset-y-0 -right-4 -left-4">
+              {columns.map((column, i) => {
+                const center = LIST_PADDING + i * (rowHeight + ROW_GAP) + rowHeight / 2 - scrollTop;
+                const top = Math.min(Math.max(center, 0), viewportHeight);
+                const handleId = columnHandleId(column.columnName);
+                const handleStyle = { ...hiddenHandleStyle, top };
+                return (
+                  <div key={column.columnName}>
+                    <Handle type="target" position={Position.Left} id={handleId} style={handleStyle} isConnectable={false} />
+                    <Handle type="source" position={Position.Right} id={handleId} style={handleStyle} isConnectable={false} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        </div>
+      )}
+      {!folded && columns.length === 0 && totalColumns > 0 && (
+        <div className="mt-3 border-t border-gray-200 pt-2 text-center text-[11px] text-gray-400 dark:border-gray-700">
+          No related columns
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowDownWideNarrow, FlaskConical } from 'lucide-react';
 import type { ColibriColumn, ColibriTest } from '../../types/colibri';
-import { dataTypeIcon } from '../../lib/dataTypeIcon';
+import { DataTypeIcon } from '../common/DataTypeIcon';
 import { LineageBadge } from '../graph/LineageBadge';
 
 export function testLabel(test: ColibriTest): string {
@@ -82,7 +82,6 @@ export function ColumnsTable({ columns, selectedColumn, onColumnClick, wide = fa
         </thead>
         <tbody>
           {rows.map((column) => {
-            const Icon = dataTypeIcon(column.dataType);
             const active = selectedColumn === column.columnName;
             return (
               <tr
@@ -94,7 +93,7 @@ export function ColumnsTable({ columns, selectedColumn, onColumnClick, wide = fa
               >
                 <td className="py-1.5 pr-2">
                   <div className="flex items-center gap-1.5">
-                    <Icon className="h-3 w-3 shrink-0 text-gray-400" />
+                    <DataTypeIcon column={column} className="h-3 w-3 shrink-0 text-gray-400" />
                     <span className="truncate font-medium text-gray-900 dark:text-gray-100" title={column.columnName}>
                       {column.columnName}
                     </span>

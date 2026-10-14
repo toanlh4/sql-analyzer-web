@@ -49,7 +49,8 @@ export function useShortcuts(lineageActive: boolean): void {
       const targets = s.selectedNodes.length > 0 ? s.selectedNodes : s.detailNode ? [s.detailNode] : [];
 
       if (e.key === 'Escape') {
-        if (s.fullscreen) s.setFullscreen(false);
+        if (s.contextMenu) s.closeContextMenu();
+        else if (s.fullscreen) s.setFullscreen(false);
         else s.clearSelection();
         return;
       }
@@ -61,6 +62,21 @@ export function useShortcuts(lineageActive: boolean): void {
           void navigator.clipboard.writeText(command);
         }
         return;
+      }
+      // Column shortcuts act on the selected (traced) column.
+      if (e.shiftKey && !mod && !e.altKey && s.selectedColumn) {
+        if (key === 'f') {
+          e.preventDefault();
+          s.closeContextMenu();
+          s.setRelatedOnly(!s.relatedOnly);
+          return;
+        }
+        if (key === 'l' && s.lineage) {
+          e.preventDefault();
+          s.closeContextMenu();
+          s.addNodes([...s.lineage.nodes]);
+          return;
+        }
       }
       if (mod || e.altKey || targets.length === 0) return;
 
