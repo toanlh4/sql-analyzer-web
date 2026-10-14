@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer components {
+  .toolbar-btn {
+    @apply inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-md px-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100;
+  }
+  .toolbar-btn-active {
+    @apply bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200;
+  }
+  .toolbar-sep {
+    @apply mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700;
+  }
+  .btn-primary {
+    @apply rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800;
+  }
+}
+
+/* Prism SQL tokens (light / dark). */
+.code-block {
+  color: #1f2937;
+}
+.code-block .token.keyword {
+  color: #7c3aed;
+  font-weight: 600;
+}
+.code-block .token.function {
+  color: #2563eb;
+}
+.code-block .token.string {
+  color: #059669;
+}
+.code-block .token.number,
+.code-block .token.boolean {
+  color: #d97706;
+}
+.code-block .token.comment {
+  color: #9ca3af;
+  font-style: italic;
+}
+.code-block .token.operator,
+.code-block .token.punctuation {
+  color: #6b7280;
+}
+.dark .code-block {
+  color: #e5e7eb;
+}
+.dark .code-block .token.keyword {
+  color: #c4b5fd;
+}
+.dark .code-block .token.function {
+  color: #93c5fd;
+}
+.dark .code-block .token.string {
+  color: #6ee7b7;
+}
+.dark .code-block .token.number,
+.dark .code-block .token.boolean {
+  color: #fcd34d;
+}
+
+/* Let node cards size themselves. */
+.react-flow__node-modelNode {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
