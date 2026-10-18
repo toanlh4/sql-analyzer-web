@@ -1,6 +1,7 @@
 import { Settings2 } from 'lucide-react';
 import { DEFAULT_DISPLAY, useAppStore } from '../../store/useAppStore';
 import { Popover } from '../common/Popover';
+import { ALL_LINEAGE_KINDS, LINEAGE_KINDS, type LineageKind } from '../../lib/lineage';
 
 const HEIGHT_PRESETS = [
   { label: 'Fit all', value: 0 },
@@ -54,6 +55,41 @@ function Slider({ min, max, step, value, disabled, onChange }: { min: number; ma
   );
 }
 
+function LineageKindsSetting() {
+  const lineageKinds = useAppStore((s) => s.lineageKinds);
+  const setLineageKinds = useAppStore((s) => s.setLineageKinds);
+  const toggle = (kind: LineageKind) =>
+    setLineageKinds(lineageKinds.includes(kind) ? lineageKinds.filter((k) => k !== kind) : [...lineageKinds, kind]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="font-medium text-gray-900 dark:text-gray-100">Lineage types</span>
+        <span className="text-xs text-gray-500">
+          {lineageKinds.length === ALL_LINEAGE_KINDS.length ? 'All' : `${lineageKinds.length} of ${ALL_LINEAGE_KINDS.length}`}
+        </span>
+      </div>
+      <div className="space-y-1">
+        {LINEAGE_KINDS.map((k) => {
+          const checked = lineageKinds.includes(k.value);
+          const isLast = checked && lineageKinds.length === 1;
+          return (
+            <label
+              key={k.value}
+              title={isLast ? 'At least one lineage type must stay selected' : k.description}
+              className={`flex items-center gap-2 ${isLast ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <input type="checkbox" className="accent-blue-600" checked={checked} disabled={isLast} onChange={() => toggle(k.value)} />
+              <span className="font-mono text-xs text-gray-700 dark:text-gray-300">{k.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-gray-500">Which expressions to follow when tracing a column's lineage.</p>
+    </div>
+  );
+}
+
 export function DisplaySettingsPanel() {
   const display = useAppStore((s) => s.display);
   const setDisplay = useAppStore((s) => s.setDisplay);
@@ -95,6 +131,8 @@ export function DisplaySettingsPanel() {
             <Presets options={ROW_PRESETS} value={display.rowHeight} onPick={(v) => setDisplay({ rowHeight: v })} />
             <Slider min={16} max={48} step={1} value={display.rowHeight} onChange={(v, commit) => (commit ? requestLayout() : setDisplay({ rowHeight: v }, false))} />
           </div>
+
+          <LineageKindsSetting />
 
           <label className="flex cursor-pointer items-center justify-between">
             <span className="font-medium text-gray-900 dark:text-gray-100">Show minimap</span>

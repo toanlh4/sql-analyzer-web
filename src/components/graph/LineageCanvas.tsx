@@ -148,7 +148,7 @@ export function LineageCanvas() {
         });
       }
       for (const e of index.structuralEdges) {
-        if (!e.edgeType || !visible.has(e.source) || !visible.has(e.target) || !lineage.nodes.has(e.target)) continue;
+        if (!e.edgeType || !lineage.kinds.has(e.edgeType) || !visible.has(e.source) || !visible.has(e.target)) continue;
         if (!lineage.columns.has(columnKey(e.source, e.sourceColumn))) continue;
         const id = `s:${e.edgeType}:${e.source}.${e.sourceColumn}->${e.target}`;
         if (seen.has(id)) continue;

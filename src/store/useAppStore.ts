@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { ColibriManifest } from '../types/colibri';
 import { buildGraphIndex, type GraphIndex } from '../lib/graphIndex';
-import { columnLineage, expandModels, type ColumnLineage, type Direction } from '../lib/lineage';
+import { ALL_LINEAGE_KINDS, columnLineage, expandModels, type ColumnLineage, type Direction, type LineageKind } from '../lib/lineage';
 
 export type BadgeMode = 'off' | '1' | 'all';
 export type Theme = 'light' | 'dark';
@@ -52,6 +52,8 @@ interface AppState {
   relatedOnly: boolean;
   contextMenu: ContextMenuState | null;
   display: DisplaySettings;
+  /** Which kinds of column lineage (SELECT / JOIN / WHERE) are traced; never empty. */
+  lineageKinds: LineageKind[];
 
   graphLayerFilter: string[];
   graphTagFilter: string[];
@@ -92,6 +94,8 @@ interface AppState {
   closeContextMenu: () => void;
   /** Update display settings; pass `relayout: false` for live preview while dragging a slider. */
   setDisplay: (settings: Partial<DisplaySettings>, relayout?: boolean) => void;
+  /** Change the traced lineage kinds and re-trace the selected column. Ignored if `kinds` is empty. */
+  setLineageKinds: (kinds: LineageKind[]) => void;
 
   setGraphLayerFilter: (layers: string[]) => void;
   setGraphTagFilter: (tags: string[]) => void;
@@ -108,6 +112,18 @@ interface AppState {
 
 const THEME_KEY = 'colibri-theme';
 const DISPLAY_KEY = 'colibri-display';
+const LINEAGE_KINDS_KEY = 'colibri-lineage-kinds';
+
+function initialLineageKinds(): LineageKind[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(LINEAGE_KINDS_KEY) ?? 'null');
+    if (!Array.isArray(saved)) return ALL_LINEAGE_KINDS;
+    const kinds = ALL_LINEAGE_KINDS.filter((k) => saved.includes(k));
+    return kinds.length > 0 ? kinds : ALL_LINEAGE_KINDS;
+  } catch {
+    return ALL_LINEAGE_KINDS;
+  }
+}
 
 function initialDisplay(): DisplaySettings {
   try {
@@ -179,6 +195,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     expandDepth: 1,
     badgeMode: '1',
     display: initialDisplay(),
+    lineageKinds: initialLineageKinds(),
     theme,
     leftOpen: true,
     rightOpen: true,
@@ -245,7 +262,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     setSelectedNodes: (ids) => set({ selectedNodes: ids }),
     openDetails: (id) => set((s) => ({ detailNode: id, rightOpen: id ? true : s.rightOpen })),
     selectColumn: (column) => {
-      const { index, relatedOnly } = get();
+      const { index, relatedOnly, lineageKinds } = get();
       // Turning off the lineage also turns off "related only"; re-layout since node heights change back.
       const clear = () => set((s) => ({ selectedColumn: null, lineage: null, relatedOnly: false, layoutRequest: s.layoutRequest + (relatedOnly ? 1 : 0) }));
       if (!column || !index) {
@@ -259,7 +276,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       }
       set((s) => ({
         selectedColumn: column,
-        lineage: columnLineage(index, column.node, column.column),
+        lineage: columnLineage(index, column.node, column.column, lineageKinds),
         layoutRequest: s.layoutRequest + (relatedOnly ? 1 : 0),
       }));
     },
@@ -273,13 +290,13 @@ export const useAppStore = create<AppState>()((set, get) => {
         layoutRequest: s.layoutRequest + (s.relatedOnly ? 1 : 0),
       })),
     setRelatedOnly: (on, column) => {
-      const { index, selectedColumn } = get();
+      const { index, selectedColumn, lineageKinds } = get();
       const target = column ?? selectedColumn;
       if (!index || !target) return;
       const sameColumn = selectedColumn?.node === target.node && selectedColumn.column === target.column;
       set((s) => ({
         selectedColumn: target,
-        lineage: sameColumn && s.lineage ? s.lineage : columnLineage(index, target.node, target.column),
+        lineage: sameColumn && s.lineage ? s.lineage : columnLineage(index, target.node, target.column, lineageKinds),
         relatedOnly: on,
         layoutRequest: s.layoutRequest + 1,
       }));
@@ -292,6 +309,24 @@ export const useAppStore = create<AppState>()((set, get) => {
         localStorage.setItem(DISPLAY_KEY, JSON.stringify(display));
         return { display, layoutRequest: s.layoutRequest + (relayout ? 1 : 0) };
       }),
+    setLineageKinds: (kinds) => {
+      const lineageKinds = ALL_LINEAGE_KINDS.filter((k) => kinds.includes(k));
+      if (lineageKinds.length === 0) return;
+      try {
+        localStorage.setItem(LINEAGE_KINDS_KEY, JSON.stringify(lineageKinds));
+      } catch {
+        // Persisting is a convenience only.
+      }
+      set((s) => {
+        if (!s.index || !s.selectedColumn) return { lineageKinds };
+        return {
+          lineageKinds,
+          lineage: columnLineage(s.index, s.selectedColumn.node, s.selectedColumn.column, lineageKinds),
+          // Visible columns change under "related only", so node heights do too.
+          layoutRequest: s.layoutRequest + (s.relatedOnly ? 1 : 0),
+        };
+      });
+    },
 
     setGraphLayerFilter: (graphLayerFilter) => set({ graphLayerFilter }),
     setGraphTagFilter: (graphTagFilter) => set({ graphTagFilter }),

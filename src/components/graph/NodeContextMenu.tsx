@@ -45,14 +45,15 @@ function useColumnItems(nodeId: string, column: string): MenuItem[] {
   const selectedColumn = useAppStore((s) => s.selectedColumn);
   const relatedOnly = useAppStore((s) => s.relatedOnly);
   const canvasNodes = useAppStore((s) => s.canvasNodes);
+  const lineageKinds = useAppStore((s) => s.lineageKinds);
   const { selectColumn, setRelatedOnly, addNodes, openDetails } = useAppStore.getState();
   if (!index) return [];
 
   const ref = { node: nodeId, column };
   const isSelected = selectedColumn?.node === nodeId && selectedColumn.column === column;
-  const lineage = columnLineage(index, nodeId, column);
+  const lineage = columnLineage(index, nodeId, column, lineageKinds);
   const missing = [...lineage.nodes].filter((id) => !canvasNodes.includes(id));
-  const hasLineage = lineage.columns.size > 1;
+  const hasLineage = lineage.columns.size > 1 || lineage.nodes.size > 1;
 
   return [
     { label: isSelected ? 'Clear lineage' : 'Trace lineage', hint: isSelected ? 'Esc' : 'Click', action: () => selectColumn(ref) },
