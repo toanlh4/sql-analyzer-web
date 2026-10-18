@@ -22,6 +22,20 @@ An enhanced web interface for [dbt-colibri](https://github.com/b-ned/dbt-colibri
 | Lineage always shows source-to-target columns combined with whether they are used in a filter or a join. | Search lineage by any of the 3 types, alone or combined (all 3 by default). For example, show only join lineage to see how tables relate. |
 | Dark mode doesn't display correctly. | Dark mode is fixed. |
 
+#### Screenshots
+
+Minimap, tooltips, and settings in the popup menu:
+
+![Light theme with minimap, tooltip and settings popup menu](images/light-theme.png)
+
+Showing only the columns involved in the selected lineage:
+
+![Light theme showing only related columns](images/light-theme-only-related-columns.png)
+
+Dark mode, now displayed correctly:
+
+![Dark theme](images/dark-theme.png)
+
 ### Strengths kept from dbt-colibri
 
 - Automatic and manual graph layout
